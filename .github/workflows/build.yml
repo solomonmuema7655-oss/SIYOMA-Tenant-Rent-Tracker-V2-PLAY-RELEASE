@@ -1,0 +1,96 @@
+name: Build SIYOMA Tenant Rent Tracker V2.0 Play AAB
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Gradle 8.11.1
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
+          unzip -q gradle-8.11.1-bin.zip
+          echo "$PWD/gradle-8.11.1/bin" >> "$GITHUB_PATH"
+          gradle --version
+
+      - name: Find Play-ready ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -type f \
+            -name 'SIYOMA_Tenant_Rent_Tracker_V2_PLAY_READY_API36.zip' \
+            -print -quit)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Play-ready ZIP was not found."
+            echo "ZIP files in repository:"
+            find . -maxdepth 2 -type f -name '*.zip' -print
+            exit 1
+          fi
+
+          echo "Found Play-ready ZIP:"
+          echo "$ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Extract Play-ready project
+        run: |
+          mkdir -p v2_project
+          unzip -o "$ZIP_FILE" -d v2_project
+
+      - name: Verify Android project
+        run: |
+          echo "Checking Android project..."
+
+          test -f v2_project/settings.gradle
+          test -f v2_project/build.gradle
+          test -f v2_project/app/build.gradle
+          test -f v2_project/app/src/main/AndroidManifest.xml
+
+          echo "Android project structure: OK"
+
+          echo "Checking SDK configuration..."
+          grep -n "compileSdk" v2_project/app/build.gradle
+          grep -n "targetSdk" v2_project/app/build.gradle
+          grep -n "versionCode" v2_project/app/build.gradle
+          grep -n "versionName" v2_project/app/build.gradle
+
+          echo "Checking launcher icons..."
+          find v2_project/app/src/main/res -type f \
+            \( -name 'ic_launcher*' -o -name 'ic_launcher_round*' \) \
+            -print
+
+      - name: Build Play Store AAB
+        working-directory: v2_project
+        run: |
+          gradle :app:bundleRelease --no-daemon
+
+      - name: Verify AAB
+        run: |
+          echo "Searching for generated AAB..."
+
+          AAB=$(find v2_project/app/build/outputs/bundle \
+            -type f -name '*.aab' -print -quit)
+
+          if [ -z "$AAB" ]; then
+            echo "ERROR: AAB was not generated."
+            exit 1
+          fi
+
+          echo "SUCCESS: AAB generated:"
+          echo "$AAB"
+
+      - name: Upload Play Store AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: SIYOMA-Tenant-Rent-Tracker-V2.0-PLAY-AAB
+          path: v2_project/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
